@@ -2,7 +2,7 @@
 $Repo = "G-DEVELOPER-707/a-finder"
 $Branch = "main"
 $ZipUrl = "https://github.com/$Repo/archive/refs/heads/$Branch.zip"
-$Dir = Join-Path $env:USERPROFILE "javod-qidiruvchi"
+$Dir = Join-Path $env:USERPROFILE "proxyFast"
 
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
