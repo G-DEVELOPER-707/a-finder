@@ -1,5 +1,5 @@
 # Javob Qidiruvchi — Windows o'rnatuvchi / yangilovchi
-$Repo      = "USERNAME/javob-qidiruvchi"   # <-- GitHub: foydalanuvchi_nomi/repo_nomi
+$Repo = "G-DEVELOPER-707/a-finder"   # <-- GitHub: foydalanuvchi_nomi/repo_nomi
 $Branch    = "main"
 $ConfigUrl = ""                            # ixtiyoriy: kalit yozilgan config.js ning (maxfiy gist) raw havolasi
 $Dir       = Join-Path $env:USERPROFILE "javob-qidiruvchi"
