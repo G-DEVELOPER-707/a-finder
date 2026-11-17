@@ -12,9 +12,24 @@ chrome.runtime.onMessage.addListener((msg, _s, send) => {
 
 // config.js — asosiy; Options sahifasida to'ldirilgan (bo'sh bo'lmagan) qiymatlar ustun turadi
 async function getCfg() {
-  const s = await chrome.storage.sync.get(null);
-  const cfg = { ...CONFIG };
-  for (const k of Object.keys(s)) if (s[k]) cfg[k] = s[k];
+  const saved = await chrome.storage.sync.get(null);
+
+  const cfg = {};
+
+  for (const key of Object.keys(CONFIG)) {
+    const defaultValue = CONFIG[key];
+
+    const savedValue = saved[key];
+
+    cfg[key] =
+      typeof savedValue === "string" &&
+      savedValue.trim() !== ""
+        ? savedValue.trim()
+        : typeof defaultValue === "string"
+          ? defaultValue.trim()
+          : defaultValue;
+  }
+
   return cfg;
 }
 
