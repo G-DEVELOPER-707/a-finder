@@ -8,35 +8,36 @@
  #ok{color:green;margin-left:10px} fieldset{margin-top:16px;border:1px solid #ccc}
 </style>
 <h2>Javob Qidiruvchi</h2>
-<p><small>Bu sahifani to’ldirish <b>shart emas</b>: asosiy sozlamalar config.js faylida. Bu yerda faqat vaqtincha o’zgartirmoqchi bo’lsangiz yozing. Bo’sh qoldirilgan maydon config.js dagi qiymatni ishlatadi.</small></p>
+<p><small>Asosiy sozlamalar config.js faylidan avtomatik olinadi. Bu sahifani to’ldirish shart emas. Qiymatlarni faqat o’zgartirmoqchi bo’lsangiz tahrirlang.</small></p>
 <label>Google Sheets havolasi</label>
-<input id="sheetUrl" placeholder="https://docs.google.com/spreadsheets/d/.../edit#gid=0">
+<input id="sheetUrl" placeholder="config.js dagi standart havola ishlatiladi">
 <small>A ustun — savollar, B ustun — javoblar. Ulashish: "Havola bor har kim — Ko'ruvchi".</small>
 
 <label>AI xizmati (jadvalda topilmasa)</label>
 <select id="provider">
-  <option value="">Standart (config.js dagi)</option>
+  <option value="gemini">Google Gemini (standart)</option>
   <option value="gemini">Google Gemini (bepul tarif)</option>
   <option value="claude">Claude (Anthropic, pullik)</option>
 </select>
 
 <fieldset id="gem"><legend>Gemini</legend>
 <label>Gemini API kalit</label>
-<input id="geminiKey" type="password" placeholder="AIza...">
+<input id="geminiKey" type="password" placeholder="config.js dagi standart kalit ishlatiladi">
 <small>aistudio.google.com/api-keys dan oling.</small>
 <label>Model</label>
-<input id="geminiModel" placeholder="gemini-flash-latest">
+<input id="geminiModel" placeholder="config.js dagi standart model ishlatiladi">
 </fieldset>
 
 <fieldset id="cl"><legend>Claude</legend>
 <label>Anthropic API kalit</label>
-<input id="apiKey" type="password" placeholder="sk-ant-...">
+<input id="apiKey" type="password" placeholder="config.js dagi standart kalit ishlatiladi">
 <label>Model</label>
-<input id="model" placeholder="claude-sonnet-5-5">
+<input id="model" placeholder="config.js dagi standart model ishlatiladi">
 </fieldset>
 
 <label>Qidiruv tugmasi</label>
 <small>Caps Lock yoqilgan holda shu tugmani bosib turing; qo'yib yuborsangiz asl matn qaytadi.</small>
 <input id="hotkey" maxlength="1" placeholder="f">
 <button id="save">Saqlash</button><span id="ok"></span>
+<script src="config.js"></script>
 <script src="options.js"></script></html>
