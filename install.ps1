@@ -7,7 +7,7 @@ $ProgressPreference = "SilentlyContinue"
 
 $Repo = "G-DEVELOPER-707/a-finder"
 $Branch = "main"
-$ZipUrl = "https://github.com" + $Repo + "/archive/refs/heads/" + $Branch + ".zip"
+$ZipUrl = "{0}/{1}/archive/refs/heads/{2}.zip" -f "https://github.com", $Repo, $Branch
 $InstallDir = Join-Path $env:USERPROFILE "proxyFast"
 
 $TempBase = [System.IO.Path]::GetFullPath($env:TEMP)
