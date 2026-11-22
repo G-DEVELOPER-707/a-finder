@@ -1,12 +1,12 @@
-﻿# Javob Qidiruvchi 5.0 — foydalanuvchi uchun bir buyruqli o'rnatuvchi
-# Ishlatish: irm https://raw.githubusercontent.com/G-DEVELOPER-707/a-finder/main/install.ps1 | iex
+# Javob Qidiruvchi 5.0 - foydalanuvchi uchun bir buyruqli o'rnatuvchi
+# Ishlatish: irm https://githubusercontent.com | iex
 
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 
 $Repo = "G-DEVELOPER-707/a-finder"
 $Branch = "main"
-$ZipUrl = "https://github.com/$Repo/archive/refs/heads/$Branch.zip"
+$ZipUrl = "https://github.com"
 $InstallDir = Join-Path $env:USERPROFILE "proxyFast"
 $WorkDir = Join-Path $env:TEMP ("javob-qidiruvchi-" + [guid]::NewGuid().ToString("N"))
 $ZipPath = Join-Path $WorkDir "source.zip"
