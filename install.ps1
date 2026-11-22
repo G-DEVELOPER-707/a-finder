@@ -28,7 +28,7 @@ try {
   }
 
   $bytes = [System.IO.File]::ReadAllBytes($ZipPath)
-  if ($bytes.Length -lt 4 -or $bytes[0] -ne 0x50 -or $bytes[1] -ne 0x4B) {
+  if ($bytes.Length -lt 4 -or $bytes -ne 0x50 -or $bytes -ne 0x4B) {
     throw "Yuklangan fayl ZIP emas. Repozitoriy 'private' emasligini yoki '$Branch' branch borligini tekshiring."
   }
 
@@ -37,20 +37,32 @@ try {
   $repoFolder = Get-ChildItem -LiteralPath $ExtractDir -Directory | Select-Object -First 1
   if (!$repoFolder) { throw "GitHub arxivi ichida loyiha topilmadi." }
 
+  # Agar 'extension' papkasi bo'lsa shuni, bo'lmasa asosiy (main) papkani olish
   $sourceExtension = Join-Path $repoFolder.FullName "extension"
   if (!(Test-Path -LiteralPath (Join-Path $sourceExtension "manifest.json"))) {
-    throw "extension\manifest.json topilmadi. GitHub main branch 5.0 tuzilmasida emas."
+    $sourceExtension = $repoFolder.FullName
   }
 
-  $config = Get-Content -LiteralPath (Join-Path $sourceExtension "config.js") -Raw
-  if ($config -match "__WORKER_URL__") {
-    throw "Loyiha egasi Cloudflare Worker'ni deploy qilib, config.js ni GitHub'ga yubormagan."
+  if (!(Test-Path -LiteralPath (Join-Path $sourceExtension "manifest.json"))) {
+    throw "manifest.json topilmadi. GitHub main branch'ga kengaytma fayllari yuklanganini tekshiring."
+  }
+
+  $configPath = Join-Path $sourceExtension "config.js"
+  if (Test-Path -LiteralPath $configPath) {
+    $config = Get-Content -LiteralPath $configPath -Raw
+    if ($config -match "__WORKER_URL__") {
+      throw "Loyiha egasi Cloudflare Worker'ni deploy qilib, config.js ni GitHub'ga yubormagan."
+    }
   }
 
   Write-Host "Chrome kengaytmasi o'rnatilmoqda..." -ForegroundColor Cyan
   if (Test-Path -LiteralPath $InstallDir) { Remove-Item -LiteralPath $InstallDir -Recurse -Force }
   New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
-  Copy-Item -Path (Join-Path $sourceExtension "*") -Destination $InstallDir -Recurse -Force
+
+  # Kengaytma fayllarini ko'chirish (install.ps1 va README fayllarini tashlab ketish)
+  Get-ChildItem -LiteralPath $sourceExtension | Where-Object {
+    $_.Name -notin @("install.ps1", "README.md", ".gitignore", ".git")
+  } | Copy-Item -Destination $InstallDir -Recurse -Force
 
   if (!(Test-Path -LiteralPath (Join-Path $InstallDir "manifest.json"))) {
     throw "O'rnatish yakunlanmadi: manifest.json yo'q."
