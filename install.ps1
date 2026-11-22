@@ -58,7 +58,7 @@ try {
   catch { Write-Host "Chrome'ni oching: chrome://extensions" -ForegroundColor Yellow }
 }
 catch {
-  Write-Host "`nO'RNATISH XATOSI: $($_.Exception.Message)" -ForegroundColor Red
+  Write-Host "`nORNATISH XATOSI: $($_.Exception.Message)" -ForegroundColor Red
 }
 finally {
   if (Test-Path $WorkDir) {
