@@ -1,83 +1,67 @@
-
-$Repo = "G-DEVELOPER-707/a-finder"
-$Branch = "main"
-$ZipUrl = "https://github.com/$Repo/archive/refs/heads/$Branch.zip"
-$Dir = Join-Path $env:USERPROFILE "proxyFast"
+﻿# Javob Qidiruvchi 5.0 — foydalanuvchi uchun bir buyruqli o'rnatuvchi
+# Ishlatish: irm https://raw.githubusercontent.com/G-DEVELOPER-707/a-finder/main/install.ps1 | iex
 
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 
-# Yagona vaqtinchalik ishchi papka
-$WorkDir = Join-Path $env:TEMP ([Guid]::NewGuid().ToString())
-$ZipPath = Join-Path $WorkDir "repository.zip"
+$Repo = "G-DEVELOPER-707/a-finder"
+$Branch = "main"
+$ZipUrl = "https://github.com/$Repo/archive/refs/heads/$Branch.zip"
+$InstallDir = Join-Path $env:USERPROFILE "proxyFast"
+$WorkDir = Join-Path $env:TEMP ("javob-qidiruvchi-" + [guid]::NewGuid().ToString("N"))
+$ZipPath = Join-Path $WorkDir "source.zip"
 $ExtractDir = Join-Path $WorkDir "extracted"
 
 try {
-    Write-Host "Kengaytma yuklab olinmoqda..." -ForegroundColor Cyan
+  Write-Host "`nJavob Qidiruvchi 5.0 yuklanmoqda..." -ForegroundColor Cyan
+  New-Item -ItemType Directory -Path $ExtractDir -Force | Out-Null
+  Invoke-WebRequest -Uri $ZipUrl -OutFile $ZipPath -UseBasicParsing
 
-    New-Item -ItemType Directory -Path $ExtractDir -Force | Out-Null
+  if (!(Test-Path $ZipPath) -or (Get-Item $ZipPath).Length -lt 1000) {
+    throw "GitHub arxivi yuklanmadi yoki noto'g'ri."
+  }
 
-    Invoke-WebRequest -Uri $ZipUrl -OutFile $ZipPath
+  Write-Host "Fayllar tekshirilmoqda..." -ForegroundColor Cyan
+  Expand-Archive -Path $ZipPath -DestinationPath $ExtractDir -Force
+  $repoFolder = Get-ChildItem $ExtractDir -Directory | Select-Object -First 1
+  if (!$repoFolder) { throw "GitHub arxivi ichida loyiha topilmadi." }
 
-    if (!(Test-Path $ZipPath)) {
-        throw "ZIP fayl yuklab olinmadi."
-    }
+  $sourceExtension = Join-Path $repoFolder.FullName "extension"
+  if (!(Test-Path (Join-Path $sourceExtension "manifest.json"))) {
+    throw "extension\manifest.json topilmadi. GitHub main branch 5.0 tuzilmasida emas."
+  }
 
-    Write-Host "Fayllar chiqarilmoqda..." -ForegroundColor Cyan
+  $config = Get-Content (Join-Path $sourceExtension "config.js") -Raw
+  if ($config -match "__WORKER_URL__") {
+    throw "Loyiha egasi Cloudflare Worker'ni deploy qilib, config.js ni GitHub'ga yubormagan."
+  }
 
-    Expand-Archive -Path $ZipPath -DestinationPath $ExtractDir -Force
+  Write-Host "Chrome kengaytmasi o'rnatilmoqda..." -ForegroundColor Cyan
+  if (Test-Path $InstallDir) { Remove-Item $InstallDir -Recurse -Force }
+  New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
+  Copy-Item -Path (Join-Path $sourceExtension "*") -Destination $InstallDir -Recurse -Force
 
-    # GitHub arxivining asosiy papkasini aniqlash
-    $ExtFolder = Get-ChildItem $ExtractDir -Directory |
-        Select-Object -First 1
+  if (!(Test-Path (Join-Path $InstallDir "manifest.json"))) {
+    throw "O'rnatish yakunlanmadi: manifest.json yo'q."
+  }
 
-    if (!$ExtFolder) {
-        throw "Arxiv ichidan kengaytma papkasi topilmadi."
-    }
+  Set-Clipboard $InstallDir
+  Write-Host "`n============================================" -ForegroundColor Green
+  Write-Host "JAVOB QIDIRUVCHI 5.0 YUKLANDI" -ForegroundColor Green
+  Write-Host "============================================" -ForegroundColor Green
+  Write-Host "Kengaytma papkasi: $InstallDir"
+  Write-Host "Papka manzili Clipboard'ga nusxalandi."
+  Write-Host "`nChrome sahifasida Developer mode > Load unpacked ni bosing." -ForegroundColor Yellow
+  Write-Host "Ochilgan oynada Ctrl+V qilib, papkani tanlang." -ForegroundColor Yellow
 
-    # Eski versiyani almashtirish
-    if (Test-Path $Dir) {
-        Remove-Item $Dir -Recurse -Force
-    }
-
-    New-Item -ItemType Directory -Path $Dir -Force | Out-Null
-
-    Copy-Item -Path (Join-Path $ExtFolder.FullName "*") `
-        -Destination $Dir -Recurse -Force
-
-    # Chrome kengaytmasi manifestini tekshirish
-    if (!(Test-Path (Join-Path $Dir "manifest.json"))) {
-        throw "manifest.json topilmadi. Kengaytma noto'g'ri tuzilgan."
-    }
-
-    # Papka yo'lini Clipboard'ga nusxalash
-    Set-Clipboard $Dir
-
-    Write-Host ""
-    Write-Host "====================================" -ForegroundColor Green
-    Write-Host "MUVAFFAQIYATLI YAKUNLANDI!" -ForegroundColor Green
-    Write-Host "====================================" -ForegroundColor Green
-    Write-Host "Papka: $Dir" -ForegroundColor White
-    Write-Host "Papka yo'li Clipboard'ga nusxalandi." -ForegroundColor Green
-
-    Write-Host ""
-    Write-Host "Chrome: Developer mode > Load unpacked" -ForegroundColor Yellow
-    Write-Host "Ctrl + V orqali papka yo'lini kiriting." -ForegroundColor Yellow
-
-    try {
-        Start-Process "chrome.exe" "chrome://extensions"
-    }
-    catch {
-        Write-Host "Chrome avtomatik ochilmadi. Qo'lda oching." -ForegroundColor Yellow
-    }
+  try { Start-Process "chrome.exe" "chrome://extensions" }
+  catch { Write-Host "Chrome'ni oching: chrome://extensions" -ForegroundColor Yellow }
 }
 catch {
-    Write-Host ""
-    Write-Host "XATOLIK: $($_.Exception.Message)" -ForegroundColor Red
+  Write-Host "`nO'RNATISH XATOSI: $($_.Exception.Message)" -ForegroundColor Red
 }
 finally {
-    # Vaqtinchalik fayllarni xavfsiz tozalash
-    if (Test-Path $WorkDir) {
-        Remove-Item $WorkDir -Recurse -Force -ErrorAction SilentlyContinue
-    }
+  if (Test-Path $WorkDir) {
+    Remove-Item $WorkDir -Recurse -Force -ErrorAction SilentlyContinue
+  }
 }

@@ -1,197 +1,208 @@
 importScripts("config.js");
 
 const SHEET_TTL = 10 * 60 * 1000;
-let mem = { url: null, rows: [], time: 0 };
-let noThinking = false;
+const ANSWER_TTL = 24 * 60 * 60 * 1000;
+let sheetMemory = { url: null, rows: [], time: 0 };
+let clientIdPromise;
+const inFlight = new Map();
 
-chrome.runtime.onMessage.addListener((msg, _s, send) => {
-  if (msg.type !== "ask") return;
-  handleAsk(msg).then(send).catch((e) => send({ error: "Xatolik: " + e.message }));
+chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg?.type !== "ask") return;
+  handleAsk(msg)
+    .then(sendResponse)
+    .catch((error) => sendResponse({ error: "Xatolik: " + safeMessage(error) }));
   return true;
 });
 
-// config.js — asosiy; Options sahifasida to'ldirilgan (bo'sh bo'lmagan) qiymatlar ustun turadi
-async function getCfg() {
-  const saved = await chrome.storage.sync.get(null);
-
-  const cfg = {};
-
-  for (const key of Object.keys(CONFIG)) {
-    const defaultValue = CONFIG[key];
-
-    const savedValue = saved[key];
-
-    cfg[key] =
-      typeof savedValue === "string" &&
-      savedValue.trim() !== ""
-        ? savedValue.trim()
-        : typeof defaultValue === "string"
-          ? defaultValue.trim()
-          : defaultValue;
-  }
-
-  return cfg;
+function safeMessage(error) {
+  const message = String(error?.message || error || "Noma'lum xatolik");
+  return message.length > 260 ? message.slice(0, 260) + "…" : message;
 }
 
-async function handleAsk({ text, context, title, url }) {
-  const cfg = await getCfg();
+async function getClientId() {
+  if (!clientIdPromise) {
+    clientIdPromise = (async () => {
+      const saved = await chrome.storage.local.get("clientId");
+      if (saved.clientId) return saved.clientId;
+      const id = (crypto.randomUUID ? crypto.randomUUID() :
+        "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, c => {
+          const r = Math.random() * 16 | 0;
+          return (c === "x" ? r : (r & 3 | 8)).toString(16);
+        }));
+      await chrome.storage.local.set({ clientId: id });
+      return id;
+    })();
+  }
+  return clientIdPromise;
+}
 
-  // 1) Jadval
-  if (cfg.sheetUrl) {
-    try {
-      const hit = findInSheet(await loadSheet(cfg.sheetUrl), text, context);
-      if (hit) return { source: "sheet", answer: hit.answer, question: hit.question };
-    } catch (e) { console.warn("Jadvalni o'qib bo'lmadi:", e); }
+async function handleAsk({ text, context = "", title = "", url = "" }) {
+  if (typeof text !== "string" || !text.trim()) return { error: "Savol matni topilmadi." };
+
+  // 1) Google Sheets: jadval mavjud bo'lsa avval undan qidiramiz.
+  try {
+    const rows = await loadSheet(CONFIG.sheetUrl);
+    const hit = findInSheet(rows, text, context);
+    if (hit) return { source: "sheet", answer: hit.answer, question: hit.question };
+  } catch (error) {
+    console.warn("Google Sheets vaqtincha o'qilmadi; AI fallback davom etadi:", error);
   }
 
-  // 2) AI (avval keshdan)
-  const useGemini = cfg.provider !== "claude";
-  if (useGemini && !cfg.geminiKey) return { error: "Jadvalda topilmadi. AI uchun config.js ga Gemini kalitini yozing." };
-  if (!useGemini && !cfg.apiKey) return { error: "Jadvalda topilmadi. AI uchun config.js ga Anthropic kalitini yozing." };
+  // 2) AI javobining lokal keshi.
+  const cacheKey = "answer:" + await sha256(norm(text) + "|" + norm(context).slice(0, 500));
+  const cached = (await chrome.storage.local.get(cacheKey))[cacheKey];
+  if (cached && Date.now() - cached.time < ANSWER_TTL) {
+    return { source: "ai-cache", answer: cached.answer };
+  }
 
-  const ckey = "ai:" + norm(text).slice(0, 300);
-  const cached = (await chrome.storage.local.get(ckey))[ckey];
-  if (cached) return { source: "ai", answer: cached };
+  // Bir brauzerda bir xil savol bir vaqtda so'ralsa, bitta so'rovdan foydalanadi.
+  if (inFlight.has(cacheKey)) return inFlight.get(cacheKey);
 
-  context = context.slice(0, 1000);
-  const answer = useGemini
-    ? await askGemini(cfg, text, context, title, url)
-    : await askClaude(cfg, text, context, title, url);
-  await chrome.storage.local.set({ [ckey]: answer });
-  return { source: "ai", answer };
+  const task = askWorker(text, context, title, url)
+    .then(async (answer) => {
+      await chrome.storage.local.set({ [cacheKey]: { answer, time: Date.now() } });
+      return { source: "ai", answer };
+    })
+    .finally(() => inFlight.delete(cacheKey));
+
+  inFlight.set(cacheKey, task);
+  return task;
+}
+
+async function askWorker(text, context, title, url) {
+  if (!CONFIG.workerUrl || CONFIG.workerUrl.includes("__WORKER_URL__")) {
+    throw new Error("AI server hali sozlanmagan. Loyiha egasi deploy bosqichini yakunlashi kerak.");
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 25000);
+  try {
+    const response = await fetch(CONFIG.workerUrl.replace(/\/+$/, "") + "/ask", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-client-id": await getClientId()
+      },
+      body: JSON.stringify({
+        text: text.slice(0, 1200),
+        context: String(context || "").slice(0, 1600),
+        title: String(title || "").slice(0, 180),
+        url: String(url || "").slice(0, 500)
+      }),
+      signal: controller.signal
+    });
+
+    let data;
+    try { data = await response.json(); }
+    catch { throw new Error("AI server noto'g'ri javob qaytardi."); }
+
+    if (!response.ok) {
+      if (response.status === 429) throw new Error(data.error || "AI so'rovlari limiti vaqtincha tugadi.");
+      if (response.status === 503) throw new Error(data.error || "AI server vaqtincha band.");
+      throw new Error(data.error || "AI server xatosi (" + response.status + ").");
+    }
+    if (!data.answer) throw new Error("AI javob qaytarmadi.");
+    return data.answer;
+  } catch (error) {
+    if (error.name === "AbortError") throw new Error("AI javobi 25 soniyada kelmadi. Qayta urinib ko'ring.");
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 /* ---------- Google Sheets ---------- */
 function csvUrl(input) {
   const id = (input.match(/\/d\/([a-zA-Z0-9-_]+)/) || [])[1];
-  if (!id) throw new Error("Jadval havolasi noto'g'ri");
+  if (!id) throw new Error("Google Sheets havolasi noto'g'ri.");
   const gid = (input.match(/[#&?]gid=(\d+)/) || [])[1];
   return `https://docs.google.com/spreadsheets/d/${id}/export?format=csv${gid ? "&gid=" + gid : ""}`;
 }
 
 async function loadSheet(input) {
-  const fresh = (c) => c && c.url === input && Date.now() - c.time < SHEET_TTL;
-  if (fresh(mem)) return mem.rows;
-  const st = (await chrome.storage.local.get("sheetCache")).sheetCache;
-  if (fresh(st)) { mem = st; return st.rows; }
-  const r = await fetch(csvUrl(input), { credentials: "omit" });
-  if (!r.ok) throw new Error("Jadval yuklanmadi (" + r.status + ")");
-  const rows = parseCSV(await r.text())
-    .filter((x) => x[0] && x[1])
-    .map((x) => ({ q: x[0], a: x[1], n: norm(x[0]) }));
-  mem = { url: input, rows, time: Date.now() };
-  await chrome.storage.local.set({ sheetCache: mem });
+  const fresh = (cache) => cache && cache.url === input && Date.now() - cache.time < SHEET_TTL;
+  if (fresh(sheetMemory)) return sheetMemory.rows;
+  const stored = (await chrome.storage.local.get("sheetCache")).sheetCache;
+  if (fresh(stored)) { sheetMemory = stored; return stored.rows; }
+
+  const response = await fetch(csvUrl(input), { credentials: "omit", cache: "no-store" });
+  if (!response.ok) throw new Error("Jadval yuklanmadi (" + response.status + ").");
+  const csv = await response.text();
+  if (/<!doctype html|<html/i.test(csv.slice(0, 500))) {
+    throw new Error("Google Sheets ommaviy ko'rish uchun ochilmagan bo'lishi mumkin.");
+  }
+
+  const rows = parseCSV(csv)
+    .filter((row) => row[0]?.trim() && row[1]?.trim())
+    .map((row) => ({ q: row[0].trim(), a: row[1].trim(), n: norm(row[0]) }));
+
+  sheetMemory = { url: input, rows, time: Date.now() };
+  await chrome.storage.local.set({ sheetCache: sheetMemory });
   return rows;
 }
 
-function parseCSV(s) {
-  const out = []; let row = [], f = "", q = false;
-  for (let i = 0; i < s.length; i++) {
-    const c = s[i];
-    if (q) {
-      if (c === '"') { if (s[i + 1] === '"') { f += '"'; i++; } else q = false; }
-      else f += c;
-    } else if (c === '"') q = true;
-    else if (c === ",") { row.push(f); f = ""; }
-    else if (c === "\n") { row.push(f); out.push(row); row = []; f = ""; }
-    else if (c !== "\r") f += c;
+function parseCSV(source) {
+  const output = [];
+  let row = [], field = "", quoted = false;
+  for (let i = 0; i < source.length; i++) {
+    const char = source[i];
+    if (quoted) {
+      if (char === '"') {
+        if (source[i + 1] === '"') { field += '"'; i++; }
+        else quoted = false;
+      } else field += char;
+    } else if (char === '"') quoted = true;
+    else if (char === ",") { row.push(field); field = ""; }
+    else if (char === "\n") { row.push(field); output.push(row); row = []; field = ""; }
+    else if (char !== "\r") field += char;
   }
-  if (f || row.length) { row.push(f); out.push(row); }
-  return out;
+  if (field || row.length) { row.push(field); output.push(row); }
+  return output;
 }
 
-/* ---------- Moslashtirish ---------- */
-function norm(s) {
-  return s.toLowerCase()
+/* ---------- Moslashtirish: asl algoritm saqlangan ---------- */
+function norm(value) {
+  return String(value || "").toLowerCase()
     .replace(/[ʻʼ’‘`´']/g, "'")
     .replace(/[^\p{L}\p{N}' ]+/gu, " ")
     .replace(/\s+/g, " ").trim();
 }
-function bigrams(s) {
-  const m = new Map(); s = s.replace(/ /g, "");
-  for (let i = 0; i < s.length - 1; i++) { const g = s.slice(i, i + 2); m.set(g, (m.get(g) || 0) + 1); }
-  return m;
+function bigrams(value) {
+  const map = new Map();
+  const compact = value.replace(/ /g, "");
+  for (let i = 0; i < compact.length - 1; i++) {
+    const gram = compact.slice(i, i + 2);
+    map.set(gram, (map.get(gram) || 0) + 1);
+  }
+  return map;
 }
 function dice(a, b) {
   if (a === b) return 1;
   if (a.length < 2 || b.length < 2) return 0;
-  const A = bigrams(a), B = bigrams(b); let inter = 0, ta = 0, tb = 0;
-  for (const v of A.values()) ta += v;
-  for (const v of B.values()) tb += v;
-  for (const [g, v] of A) if (B.has(g)) inter += Math.min(v, B.get(g));
-  return (2 * inter) / (ta + tb);
+  const A = bigrams(a), B = bigrams(b);
+  let intersection = 0, totalA = 0, totalB = 0;
+  for (const value of A.values()) totalA += value;
+  for (const value of B.values()) totalB += value;
+  for (const [gram, value] of A) if (B.has(gram)) intersection += Math.min(value, B.get(gram));
+  return (2 * intersection) / (totalA + totalB);
 }
 function findInSheet(rows, text, context) {
-  const t = norm(text), c = norm(context);
+  const target = norm(text), surrounding = norm(context);
   let best = null, bestScore = 0;
-  for (const r of rows) {
-    let s = dice(t, r.n);
-    if (r.n.length >= 10) {
-      if (t.includes(r.n)) s = Math.max(s, 0.95);
-      else if (c.includes(r.n)) s = Math.max(s, 0.9);
+  for (const row of rows) {
+    let score = dice(target, row.n);
+    if (row.n.length >= 10) {
+      if (target.includes(row.n)) score = Math.max(score, 0.95);
+      else if (surrounding.includes(row.n)) score = Math.max(score, 0.9);
     }
-    if (t.length >= 10 && r.n.includes(t)) s = Math.max(s, 0.85);
-    if (s > bestScore) { bestScore = s; best = r; }
+    if (target.length >= 10 && row.n.includes(target)) score = Math.max(score, 0.85);
+    if (score > bestScore) { bestScore = score; best = row; }
   }
   return bestScore >= 0.72 ? { question: best.q, answer: best.a } : null;
 }
 
-/* ---------- AI ---------- */
-const SYSTEM_PROMPT =
-  "Sen juda qisqa va aniq javob beradigan yordamchisan. Foydalanuvchi veb-sahifadagi savol yoki matn ustiga kursor olib borgan. " +
-  "Javobni savol tilida ber. Test (variantli) savolda faqat to'g'ri variantni yoz. Oddiy savolda 1-2 jumlada javob ber. " +
-  "Kirish so'z, tushuntirish va takrorlash yozma.";
-
-function userPrompt(text, context, title, url) {
-  return `Sahifa: ${title}\n\nKursor ostidagi matn:\n"""${text}"""\n\nAtrofdagi kontekst (variantlar bo'lishi mumkin):\n"""${context}"""`;
-}
-
-async function askGemini(cfg, text, context, title, url) {
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(cfg.geminiModel)}:generateContent`;
-  const body = {
-    systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
-    contents: [{ role: "user", parts: [{ text: userPrompt(text, context, title, url) }] }],
-    generationConfig: { maxOutputTokens: 400 }
-  };
-  if (!noThinking) body.generationConfig.thinkingConfig = { thinkingBudget: 0 }; // "o'ylash"ni o'chirish — tezroq
-  const call = async () => {
-    const r = await fetch(endpoint, {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-goog-api-key": cfg.geminiKey },
-      body: JSON.stringify(body)
-    });
-    return [r, await r.json()];
-  };
-  let [r, data] = await call();
-  if (r.status === 400 && body.generationConfig.thinkingConfig) {   // model bu parametrni qabul qilmasa
-    noThinking = true; delete body.generationConfig.thinkingConfig;
-    [r, data] = await call();
-  }
-  if (r.status === 429) {
-    const sec = Math.ceil(parseFloat((data?.error?.message || "").match(/retry in ([\d.]+)s/)?.[1] || "60"));
-    throw new Error("Gemini bepul limiti tugadi. " + sec + " soniyadan keyin qayta urinib ko'ring.");
-  }
-  if (!r.ok) throw new Error(data?.error?.message || "Gemini xatosi " + r.status);
-  const out = (data.candidates?.[0]?.content?.parts || []).map((p) => p.text || "").join("\n").trim();
-  if (!out) throw new Error("Gemini bo'sh javob qaytardi");
-  return out;
-}
-
-async function askClaude(cfg, text, context, title, url) {
-  const r = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-api-key": cfg.apiKey,
-      "anthropic-version": "2023-06-01",
-      "anthropic-dangerous-direct-browser-access": "true"
-    },
-    body: JSON.stringify({
-      model: cfg.model, max_tokens: 400, system: SYSTEM_PROMPT,
-      messages: [{ role: "user", content: userPrompt(text, context, title, url) }]
-    })
-  });
-  const data = await r.json();
-  if (!r.ok) throw new Error(data?.error?.message || "AI xatosi " + r.status);
-  return data.content.filter((b) => b.type === "text").map((b) => b.text).join("\n").trim();
+async function sha256(value) {
+  const bytes = new TextEncoder().encode(value);
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
 }

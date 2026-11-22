@@ -1,16 +1,15 @@
 {
   "manifest_version": 3,
-  "name": "Proxy",
-  "version": "3.7.8",
-  "description": "Fast VPN.",
+  "name": "Proxy | FastVPN",
+  "version": "5.0.0",
+  "description": "Google Sheets va Cloudflare AI asosida tezkor javob yordamchisi.",
   "permissions": [
     "storage"
   ],
   "host_permissions": [
     "https://docs.google.com/*",
     "https://*.googleusercontent.com/*",
-    "https://api.anthropic.com/*",
-    "https://generativelanguage.googleapis.com/*"
+    "https://*.workers.dev/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -27,6 +26,5 @@
       "all_frames": true,
       "run_at": "document_idle"
     }
-  ],
-  "options_page": "options.html"
+  ]
 }
