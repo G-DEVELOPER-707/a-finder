@@ -10,7 +10,6 @@ $Branch = "main"
 $ZipUrl = "https://github.com"
 $InstallDir = Join-Path $env:USERPROFILE "proxyFast"
 
-# TEMP papkasining to'liq (uzun) yo'lini olish (TEMP~1 xatosini oldini olish uchun)
 $TempBase = [System.IO.Path]::GetFullPath($env:TEMP)
 $WorkDir = Join-Path $TempBase ("javob-qidiruvchi-" + [guid]::NewGuid().ToString("N"))
 $ZipPath = Join-Path $WorkDir "source.zip"
@@ -20,7 +19,6 @@ try {
   Write-Host "`nJavob Qidiruvchi 5.0 yuklanmoqda..." -ForegroundColor Cyan
   New-Item -ItemType Directory -Path $ExtractDir -Force | Out-Null
 
-  # GitHub redirectlarini to'g'ri yuklash uchun WebClient ishlatamiz
   $webClient = New-Object System.Net.WebClient
   $webClient.Headers.Add("User-Agent", "PowerShell-Installer")
   $webClient.DownloadFile($ZipUrl, $ZipPath)
@@ -29,10 +27,9 @@ try {
     throw "GitHub arxivi yuklanmadi yoki hajmi juda kichik."
   }
 
-  # Fayl haqiqatan ham ZIP ekanligini (PK sarlavhasini) tekshirish
   $bytes = [System.IO.File]::ReadAllBytes($ZipPath)
   if ($bytes.Length -lt 4 -or $bytes[0] -ne 0x50 -or $bytes[1] -ne 0x4B) {
-    throw "Yuklangan fayl ZIP emas. Repozitoriy 'private' (yopiq) emasligini yoki '$Branch' branch borligini tekshiring."
+    throw "Yuklangan fayl ZIP emas. Repozitoriy 'private' emasligini yoki '$Branch' branch borligini tekshiring."
   }
 
   Write-Host "Fayllar tekshirilmoqda..." -ForegroundColor Cyan
