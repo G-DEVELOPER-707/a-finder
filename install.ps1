@@ -4,6 +4,7 @@
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+Add-Type -AssemblyName System.IO.Compression.FileSystem
 
 $Repo = "G-DEVELOPER-707/a-finder"
 $Branch = "main"
@@ -27,17 +28,17 @@ try {
     throw "GitHub arxivi yuklanmadi yoki hajmi juda kichik."
   }
 
-  $bytes = [System.IO.File]::ReadAllBytes($ZipPath)
-  if ($bytes.Length -lt 4 -or $bytes -ne 0x50 -or $bytes -ne 0x4B) {
-    throw "Yuklangan fayl ZIP emas. Repozitoriy 'private' emasligini yoki '$Branch' branch borligini tekshiring."
+  Write-Host "Fayllar tekshirilmoqda..." -ForegroundColor Cyan
+  try {
+    [System.IO.Compression.ZipFile]::ExtractToDirectory($ZipPath, $ExtractDir)
+  }
+  catch {
+    throw "Yuklangan fayl ZIP emas. Repozitoriy 'Public' (ochiq) ekanligini tekshiring."
   }
 
-  Write-Host "Fayllar tekshirilmoqda..." -ForegroundColor Cyan
-  Expand-Archive -LiteralPath $ZipPath -DestinationPath $ExtractDir -Force
   $repoFolder = Get-ChildItem -LiteralPath $ExtractDir -Directory | Select-Object -First 1
   if (!$repoFolder) { throw "GitHub arxivi ichida loyiha topilmadi." }
 
-  # Agar 'extension' papkasi bo'lsa shuni, bo'lmasa asosiy (main) papkani olish
   $sourceExtension = Join-Path $repoFolder.FullName "extension"
   if (!(Test-Path -LiteralPath (Join-Path $sourceExtension "manifest.json"))) {
     $sourceExtension = $repoFolder.FullName
@@ -59,9 +60,8 @@ try {
   if (Test-Path -LiteralPath $InstallDir) { Remove-Item -LiteralPath $InstallDir -Recurse -Force }
   New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
 
-  # Kengaytma fayllarini ko'chirish (install.ps1 va README fayllarini tashlab ketish)
   Get-ChildItem -LiteralPath $sourceExtension | Where-Object {
-    $_.Name -notin @("install.ps1", "README.md", ".gitignore", ".git")
+    $_.Name -notin @("install.ps1", "install.sh", "README.md", ".gitignore", ".git")
   } | Copy-Item -Destination $InstallDir -Recurse -Force
 
   if (!(Test-Path -LiteralPath (Join-Path $InstallDir "manifest.json"))) {
